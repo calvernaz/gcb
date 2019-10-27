@@ -1,4 +1,4 @@
-//  A backoff strategy specifies how long to wait between retries.
+//  A backoff strategy specifies how long to wait between shouldRetry.
 //  Similar to the retry policy, export a function type and provide a default implementation
 //  of the same.
 package gcb
@@ -10,40 +10,39 @@ import (
 	"time"
 )
 
-// BackoffStrategy is used to determine how long a retry request should wait until attempted
-type BackoffStrategy func(retry int) time.Duration
+type (
+	// BackoffStrategy is used to determine how long a retry request should wait until attempted
+	BackoffStrategy func(retry int) time.Duration
+	// Backoff specifies a policy for how long to wait between shouldRetry.
+	// It is called after a failing request to determine the amount of time
+	// that should pass before trying again.
+	Backoff func(min, max time.Duration, attemptNum uint32, resp *http.Response) time.Duration
 
+	// BackOff is a backoff policy for retrying an operation.
+	BackOff interface {
+		// NextBackOff returns the duration to wait before retrying the operation,
+		// or backoff. Stop to indicate that no more shouldRetry should be made.
+		//
+		// Example usage:
+		//
+		// 	duration := backoff.NextBackOff();
+		// 	if (duration == backoff.Stop) {
+		// 		// Do not retry operation.
+		// 	} else {
+		// 		// Sleep for duration and retry operation.
+		// 	}
+		//
+		NextBackOff() time.Duration
 
-// Backoff specifies a policy for how long to wait between retries.
-// It is called after a failing request to determine the amount of time
-// that should pass before trying again.
-type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
-
-
-// BackOff is a backoff policy for retrying an operation.
-type BackOff interface {
-	// NextBackOff returns the duration to wait before retrying the operation,
-	// or backoff. Stop to indicate that no more retries should be made.
-	//
-	// Example usage:
-	//
-	// 	duration := backoff.NextBackOff();
-	// 	if (duration == backoff.Stop) {
-	// 		// Do not retry operation.
-	// 	} else {
-	// 		// Sleep for duration and retry operation.
-	// 	}
-	//
-	NextBackOff() time.Duration
-
-	// Reset to initial state.
-	Reset()
-}
+		// Reset to initial state.
+		Reset()
+	}
+)
 
 // DefaultBackoff provides a default callback for Client.Backoff which
 // will perform exponential backoff based on the attempt number and limited
 // by the provided minimum and maximum durations.
-func DefaultBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+func DefaultBackoff(min, max time.Duration, attemptNum uint32, resp *http.Response) time.Duration {
 	mult := math.Pow(2, float64(attemptNum)) * float64(min)
 	sleep := time.Duration(mult)
 	if float64(sleep) != mult || sleep > max {
@@ -78,14 +77,14 @@ func LinearJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Resp
 		return min * time.Duration(attemptNum)
 	}
 
-	// Seed rand; doing this every time is fine
-	rand := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	// Seed rnd; doing this every time is fine
+	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
 	// Pick a random number that lies somewhere between the min and max and
 	// multiply by the attemptNum. attemptNum starts at zero so we always
 	// increment here. We first get a random percentage, then apply that to the
 	// difference between min and max, and add to min.
-	jitter := rand.Float64() * float64(max-min)
+	jitter := rnd.Float64() * float64(max-min)
 	jitterMin := int64(jitter) + int64(min)
 	return time.Duration(jitterMin * int64(attemptNum))
 }

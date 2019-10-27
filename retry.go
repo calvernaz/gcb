@@ -3,164 +3,81 @@ package gcb
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
-var errMaxRetriesReached = errors.New("exceeded retry limit")
-
 var (
+	errMaxRetriesReached = errors.New("exceeded retry limit")
+
 	// Default retry configuration
 	defaultRetryWaitMin = 1 * time.Second
 	defaultRetryWaitMax = 30 * time.Second
-	defaultRetryMax     = 4
+	defaultRetryMax     = uint32(4)
 )
 
+type (
+	// CheckRetry specifies a policy for handling shouldRetry. It is called
+	// following each request with the response and error values returned by
+	// the http.Client. If CheckRetry returns false, the Client stops retrying
+	// and returns the response to the caller. If CheckRetry returns an error,
+	// that error value is returned in lieu of the error from the request. The
+	// Client will close any response body when retrying, but if the retry is
+	// aborted it is up to the CheckRetry callback to properly close any
+	// response body before returning.
+	CheckRetry func(ctx context.Context, resp *http.Response, err error) (bool, error)
 
-// CheckRetry specifies a policy for handling retries. It is called
-// following each request with the response and error values returned by
-// the http.Client. If CheckRetry returns false, the Client stops retrying
-// and returns the response to the caller. If CheckRetry returns an error,
-// that error value is returned in lieu of the error from the request. The
-// Client will close any response body when retrying, but if the retry is
-// aborted it is up to the CheckRetry callback to properly close any
-// response body before returning.
-type CheckRetry func(ctx context.Context, resp *http.Response, err error) (bool, error)
+	// Retrier
+	Retrier struct {
+		// Backoff specifies the policy for how long to wait between shouldRetry
+		Backoff Backoff
 
-// Function signature of retryable function
-type DoFunc func() (*http.Response, error)
+		RetryWaitMin time.Duration // Minimum time to wait
+		RetryWaitMax time.Duration // Maximum time to wait
+		RetryMax     uint32        // Maximum number of maxRetries
 
-// Option represents an option for retry.
-type Option func(*Config)
+		// CheckRetry specifies the policy for handling reties, and is called
+		// after each request. The default policy is DefaultRetryPolicy.
+		CheckRetry CheckRetry
 
-type Config struct {
-	maxAttempts   uint
-	delay         time.Duration
-	lastErrorOnly bool
-}
-
-// Retrier
-type Retrier struct {
-	config *Config
-
-
-	// Backoff specifies the policy for how long to wait between retries
-	Backoff Backoff
-
-	RetryWaitMin time.Duration // Minimum time to wait
-	RetryWaitMax time.Duration // Maximum time to wait
-	RetryMax     int           // Maximum number of retries
-
-	// CheckRetry specifies the policy for handling retries, and is called
-	// after each request. The default policy is DefaultRetryPolicy.
-	CheckRetry CheckRetry
-}
-
+		// Limiter specifies the policy that controls the request rate.
+		Limiter *rate.Limiter
+	}
+)
 
 func NewRetrier(opts ...Option) *Retrier {
-	//default
+	// defaults
 	config := &Config{
-		maxAttempts:   10,
-		delay:         100 * time.Millisecond,
-		lastErrorOnly: false,
+		maxRetries: defaultRetryMax,
+		minWait:    defaultRetryWaitMin,
+		maxWait:    defaultRetryWaitMax,
 	}
 
-	//apply opts
+	// apply opts
 	for _, opt := range opts {
 		opt(config)
 	}
 
 	return &Retrier{
-		config:     config,
+		RetryMax:     config.maxRetries,
+		RetryWaitMin: config.minWait,
+		RetryWaitMax: config.maxWait,
+
 		CheckRetry: DefaultRetryPolicy,
 		Backoff:    DefaultBackoff,
+		Limiter:    rate.NewLimiter(rate.Every(5*time.Millisecond), 200),
 	}
 }
 
-func (r *Retrier) Do(c *circuit, req *Request) (*http.Response, error) {
-	var code int // HTTP response code
-	var resp *http.Response
-	var err error
-
-	for i := 0; ; i++ {
-		// Always rewind the request body when non-nil.
-		if req.Body != nil {
-			body, err := req.Body()
-			if err != nil {
-				return resp, err
-			}
-			if c, ok := body.(io.ReadCloser); ok {
-				req.Request.Body = c
-			} else {
-				req.Request.Body = ioutil.NopCloser(body)
-			}
-		}
-
-		resp, err = c.RoundTripper.RoundTrip(req.Request)
-		if resp != nil {
-			code = resp.StatusCode
-		}
-
-		// Check if we should continue with retries.
-		checkOK, checkErr := r.CheckRetry(req.Context(), resp, err)
-
-		if err != nil {
-			log.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, err)
-		}
-
-		// Now decide if we should continue.
-		if !checkOK {
-			if checkErr != nil {
-				err = checkErr
-			}
-			return resp, err
-		}
-
-		// We do this before drainBody beause there's no need for the I/O if
-		// we're breaking out
-		remain := r.RetryMax - i
-		if remain <= 0 {
-			break
-		}
-
-		// We're going to retry, consume any response to reuse the connection.
-		if err == nil && resp != nil {
-			c.drainBody(resp.Body)
-		}
-
-		wait := r.Backoff(r.RetryWaitMin, r.RetryWaitMax, i, resp)
-		desc := fmt.Sprintf("%s %s", req.Method, req.URL)
-		if code > 0 {
-			desc = fmt.Sprintf("%s (status: %d)", desc, code)
-		}
-
-		log.Printf("[DEBUG] %s: retrying in %s (%d left)", desc, wait, remain)
-
-		select {
-		case <-req.Context().Done():
-			return nil, req.Context().Err()
-		case <-time.After(wait):
-		}
+func (r *Retrier) retryPolicy(ctx context.Context, res *http.Response, err error) (bool, error) {
+	// rate limiter allowance
+	if !r.Limiter.Allow() {
+		return false, rateLimitExceeded
 	}
-
-	//if c.ErrorHandler != nil {
-	//	c.HTTPClient.CloseIdleConnections()
-	//	return c.ErrorHandler(resp, err, c.RetryMax+1)
-	//}
-
-	// By default, we close the response body and return an error without
-	// returning the response
-	if resp != nil {
-		resp.Body.Close()
-	}
-	return nil, fmt.Errorf("%s %s giving up after %d attempts",
-		req.Method, req.URL, r.RetryMax+1)
+	return r.CheckRetry(ctx, res, err)
 }
-
 
 // DefaultRetryPolicy provides a default callback for Client.CheckRetry, which
 // will retry on connection errors and server errors.
@@ -183,29 +100,3 @@ func DefaultRetryPolicy(ctx context.Context, resp *http.Response, err error) (bo
 
 	return false, nil
 }
-
-
-//
-//func (r *Retrier) Do(doFn *http.Response, error) (*http.Response, error) {
-//	attempt := 0
-//
-//	const qps = 200
-//	limiter := rate.NewLimiter(rate.Every(time.Second/qps), 1)
-//	for attempt < 3 {
-//
-//		if err := limiter.Wait(context.Background()); err != nil {
-//			return nil, err
-//		}
-//
-//		fmt.Printf("%s: attempt: %d\n", time.Now(), attempt)
-//		attempt++
-//		response, err := doFn()
-//		if err == nil {
-//			fmt.Printf("%s \n", err)
-//			return response, err
-//		} else {
-//			fmt.Printf("%s \n", err)
-//		}
-//	}
-//	return nil, errMaxRetriesReached
-//}
