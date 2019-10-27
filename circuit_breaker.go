@@ -7,15 +7,10 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 )
 
 var (
 	_ http.RoundTripper = (*circuit)(nil)
-
-	// defaultLogger is the logger provided with defaultClient
-	defaultLogger = log.New(os.Stderr, "", log.LstdFlags)
-
 	// We need to consume response bodies to maintain http connections, but
 	// limit the size we consume to respReadLimit.
 	respReadLimit = int64(4096)
@@ -27,51 +22,7 @@ var (
 // attempted. If overriding this, be sure to close the body if needed.
 type ErrorHandler func(resp *http.Response, err error, numTries int) (*http.Response, error)
 
-type State int8
-
-const (
-	Open State = iota + 1
-	HalfOpen
-	Close
-)
-
-func (s State) String() string {
-	switch s {
-	case Open:
-		return "Open"
-	case HalfOpen:
-		return "HalfOpen"
-	case Close:
-		return "Close"
-	}
-	return ""
-}
-
-// circuit
-type circuit struct {
-	state   State
-	retrier *Retrier
-
-	RoundTripper http.RoundTripper
-
-	// CheckRetry specifies the policy for handling retries, and is called
-	// after each request. The default policy is DefaultRetryPolicy.
-	CheckRetry CheckRetry
-
-	// ErrorHandler specifies the custom error handler to use, if any
-	ErrorHandler ErrorHandler
-}
-
-func NewCircuit() *circuit {
-	retrier := NewRetrier()
-	return &circuit{
-		retrier:      retrier,
-		RoundTripper: http.DefaultTransport,
-		CheckRetry:   DefaultRetryPolicy,
-	}
-}
-
-// ReaderFunc is the type of function that can be given natively to NewRequest
+// ReaderFunc is the type of function that can be given natively to newRequest
 type ReaderFunc func() (io.Reader, error)
 
 // Request wraps the metadata needed to create HTTP requests.
@@ -85,8 +36,50 @@ type Request struct {
 	*http.Request
 }
 
-// NewRequest creates a new wrapped request.
-func NewRequest(method, url string, rawBody interface{}) (*Request, error) {
+type circuit struct {
+	retrier *Retrier
+
+	RoundTripper http.RoundTripper
+
+	// CheckRetry specifies the policy for handling retries, and is called
+	// after each request. The default policy is DefaultRetryPolicy.
+	CheckRetry CheckRetry
+
+	// ErrorHandler specifies the custom error handler to use, if any
+	ErrorHandler ErrorHandler
+}
+
+func newCircuit() *circuit {
+	retrier := NewRetrier()
+	return &circuit{
+		retrier:      retrier,
+		RoundTripper: http.DefaultTransport,
+		CheckRetry:   DefaultRetryPolicy,
+	}
+}
+
+// LenReader is an interface implemented by many in-memory io.Reader's. Used
+// for automatically sending the right Content-Length header when possible.
+type LenReader interface {
+	Len() int
+}
+
+// RoundTrip intercepts the request and takes action from here:
+// - retries
+// - rate limiting
+// - circuit breaking
+func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
+	// wraps the original request
+	request, err := newRequest(req.Method, req.URL.String(), req.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.retrier.Do(c, request)
+}
+
+// newRequest creates a new wrapped request.
+func newRequest(method, url string, rawBody interface{}) (*Request, error) {
 	bodyReader, contentLength, err := getBodyReaderAndContentLength(rawBody)
 	if err != nil {
 		return nil, err
@@ -100,22 +93,6 @@ func NewRequest(method, url string, rawBody interface{}) (*Request, error) {
 
 	return &Request{bodyReader, httpReq}, nil
 }
-
-// LenReader is an interface implemented by many in-memory io.Reader's. Used
-// for automatically sending the right Content-Length header when possible.
-type LenReader interface {
-	Len() int
-}
-
-func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
-	r, err := NewRequest(req.Method, req.URL.String(), req.Body)
-	if err != nil {
-		return nil, err
-	}
-	return c.retrier.Do(c, r)
-}
-
-
 
 func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, error) {
 	var bodyReader ReaderFunc

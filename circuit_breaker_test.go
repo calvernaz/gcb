@@ -7,14 +7,14 @@ import (
 )
 
 func TestStateChanges(t *testing.T) {
-	states := [] State {
+	states := []State{
 		Open,
 		HalfOpen,
 		Close,
 	}
 
-	circuit := circuit{
-		state:   0,
+	circuit := Gcb{
+		state: 0,
 	}
 	for i, s := range states {
 		circuit.state = s
@@ -24,20 +24,14 @@ func TestStateChanges(t *testing.T) {
 	}
 }
 
-
 func TestCircuitRetry(t *testing.T) {
 
-	retrier := NewRetrier()
-	circuit := &circuit{
-		retrier: retrier,
-
+	circuit := &Gcb{
 		RoundTripper: http.DefaultTransport,
-
 	}
-
 	client := http.Client{
-		Transport:     circuit,
-		Timeout:       30 * time.Second,
+		Transport: circuit,
+		Timeout:   30 * time.Second,
 	}
 
 	request, _ := http.NewRequest("GET", "/", nil)

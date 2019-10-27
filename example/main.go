@@ -10,12 +10,12 @@ import (
 	"github.com/calvernaz/gcb"
 )
 
-func main()  {
+func main() {
 
-	circuit := gcb.NewCircuit()
+	gcb := gcb.New()
 	client := http.Client{
-		Transport:     circuit,
-		Timeout:       30 * time.Second,
+		Transport: gcb,
+		Timeout:   30 * time.Second,
 	}
 
 	request, _ := http.NewRequest("GET", "http://localhost:8080", nil)
