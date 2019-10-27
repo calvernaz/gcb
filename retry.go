@@ -20,7 +20,6 @@ var (
 	defaultRetryMax     = 4
 )
 
-
 // CheckRetry specifies a policy for handling retries. It is called
 // following each request with the response and error values returned by
 // the http.Client. If CheckRetry returns false, the Client stops retrying
@@ -47,7 +46,6 @@ type Config struct {
 type Retrier struct {
 	config *Config
 
-
 	// Backoff specifies the policy for how long to wait between retries
 	Backoff Backoff
 
@@ -59,7 +57,6 @@ type Retrier struct {
 	// after each request. The default policy is DefaultRetryPolicy.
 	CheckRetry CheckRetry
 }
-
 
 func NewRetrier(opts ...Option) *Retrier {
 	//default
@@ -161,7 +158,6 @@ func (r *Retrier) Do(c *circuit, req *Request) (*http.Response, error) {
 		req.Method, req.URL, r.RetryMax+1)
 }
 
-
 // DefaultRetryPolicy provides a default callback for Client.CheckRetry, which
 // will retry on connection errors and server errors.
 func DefaultRetryPolicy(ctx context.Context, resp *http.Response, err error) (bool, error) {
@@ -183,29 +179,3 @@ func DefaultRetryPolicy(ctx context.Context, resp *http.Response, err error) (bo
 
 	return false, nil
 }
-
-
-//
-//func (r *Retrier) Do(doFn *http.Response, error) (*http.Response, error) {
-//	attempt := 0
-//
-//	const qps = 200
-//	limiter := rate.NewLimiter(rate.Every(time.Second/qps), 1)
-//	for attempt < 3 {
-//
-//		if err := limiter.Wait(context.Background()); err != nil {
-//			return nil, err
-//		}
-//
-//		fmt.Printf("%s: attempt: %d\n", time.Now(), attempt)
-//		attempt++
-//		response, err := doFn()
-//		if err == nil {
-//			fmt.Printf("%s \n", err)
-//			return response, err
-//		} else {
-//			fmt.Printf("%s \n", err)
-//		}
-//	}
-//	return nil, errMaxRetriesReached
-//}
