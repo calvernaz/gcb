@@ -12,9 +12,9 @@ import (
 
 func main() {
 
-	gcb := gcb.New()
+	transport := gcb.New()
 	client := http.Client{
-		Transport: gcb,
+		Transport: transport,
 		Timeout:   30 * time.Second,
 	}
 

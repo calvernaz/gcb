@@ -38,6 +38,7 @@ type Request struct {
 
 type circuit struct {
 	retrier *Retrier
+	breaker *Breaker
 
 	RoundTripper http.RoundTripper
 
@@ -51,8 +52,10 @@ type circuit struct {
 
 func newCircuit() *circuit {
 	retrier := NewRetrier()
+	breaker := NewBreaker()
 	return &circuit{
 		retrier:      retrier,
+		breaker:      breaker,
 		RoundTripper: http.DefaultTransport,
 		CheckRetry:   DefaultRetryPolicy,
 	}
@@ -73,6 +76,20 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 	request, err := newRequest(req.Method, req.URL.String(), req.Body)
 	if err != nil {
 		return nil, err
+	}
+
+
+	res, err := c.breaker.Execute(func() (interface{}, error) {
+		res, err := t.tripper.RoundTrip(r)
+		if err != nil {
+			return nil, err
+		}
+
+		if res != nil && res.StatusCode >= http.StatusInternalServerError {
+			return res, fmt.Errorf("http response error: %v", res.StatusCode)
+		}
+
+		return res, err
 	}
 
 	return c.retrier.Do(c, request)
