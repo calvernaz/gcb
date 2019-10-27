@@ -37,7 +37,6 @@ type DoFunc func() (*http.Response, error)
 type Option func(*Config)
 
 type Config struct {
-	maxAttempts   uint
 	delay         time.Duration
 	lastErrorOnly bool
 }
@@ -61,7 +60,6 @@ type Retrier struct {
 func NewRetrier(opts ...Option) *Retrier {
 	//default
 	config := &Config{
-		maxAttempts:   10,
 		delay:         100 * time.Millisecond,
 		lastErrorOnly: false,
 	}

@@ -78,9 +78,8 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-
 	res, err := c.breaker.Execute(func() (interface{}, error) {
-		res, err := t.tripper.RoundTrip(r)
+		res, err := c.RoundTripper.RoundTrip(request.Request)
 		if err != nil {
 			return nil, err
 		}
@@ -90,9 +89,14 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		return res, err
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	return c.retrier.Do(c, request)
+	return res.(*http.Response), err
+	//return c.retrier.Do(c, request)
 }
 
 // newRequest creates a new wrapped request.
