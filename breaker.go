@@ -2,6 +2,7 @@ package gcb
 
 import (
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -153,7 +154,7 @@ func NewCircuitBreaker(st Settings) *Breaker {
 // Otherwise, Execute returns the result of the request.
 // If a panic occurs in the request, the CircuitBreaker handles it as an error
 // and causes the same panic again.
-func (cb *Breaker) Execute(req func() (interface{}, error)) (interface{}, error) {
+func (cb *Breaker) Execute(req func() (*http.Response, error)) (*http.Response, error) {
 	generation, err := cb.beforeRequest()
 	if err != nil {
 		return nil, err

@@ -4,11 +4,8 @@ import (
 	"net/http"
 )
 
-
-
 // Gcb
 type Gcb struct {
-
 	http.RoundTripper
 }
 

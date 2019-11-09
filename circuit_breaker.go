@@ -2,18 +2,24 @@ package gcb
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"time"
 )
+
+
 
 var (
 	_ http.RoundTripper = (*circuit)(nil)
 	// We need to consume response bodies to maintain http connections, but
 	// limit the size we consume to respReadLimit.
 	respReadLimit = int64(4096)
+
+	rateLimitExceeded = errors.New("exceeded rate limit")
 )
 
 // ErrorHandler is called if retries are expired, containing the last status
@@ -42,10 +48,6 @@ type circuit struct {
 
 	RoundTripper http.RoundTripper
 
-	// CheckRetry specifies the policy for handling retries, and is called
-	// after each request. The default policy is DefaultRetryPolicy.
-	CheckRetry CheckRetry
-
 	// ErrorHandler specifies the custom error handler to use, if any
 	ErrorHandler ErrorHandler
 }
@@ -57,7 +59,6 @@ func newCircuit() *circuit {
 		retrier:      retrier,
 		breaker:      breaker,
 		RoundTripper: http.DefaultTransport,
-		CheckRetry:   DefaultRetryPolicy,
 	}
 }
 
@@ -78,14 +79,58 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	res, err := c.breaker.Execute(func() (interface{}, error) {
-		res, err := c.RoundTripper.RoundTrip(request.Request)
-		if err != nil {
-			return nil, err
-		}
+	// the circuit breaker
+	res, err := c.breaker.Execute(func() (*http.Response, error) {
+		var code int // HTTP response code
+		var res *http.Response
+		var err error
 
-		if res != nil && res.StatusCode >= http.StatusInternalServerError {
-			return res, fmt.Errorf("http response error: %v", res.StatusCode)
+		// run X times
+		for i := 0; ; i++ {
+			res, err = c.RoundTripper.RoundTrip(request.Request)
+			if err != nil {
+				return nil, err
+			}
+
+			// Check if we should continue with retries.
+			canRetry, checkErr := c.retrier.retryPolicy(req.Context(), res, err)
+			if err != nil {
+				log.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, err)
+			}
+
+			// Now decide if we should continue.
+			if !canRetry {
+				if checkErr != nil {
+					err = checkErr
+				}
+				return res, err
+			}
+
+			// We do this before drainBody because there's no need for the I/O if
+			// we're breaking out
+			remain := c.retrier.RetryMax - i
+			if remain <= 0 {
+				break
+			}
+
+			// We're going to retry, consume any response to reuse the connection.
+			if err == nil && res != nil {
+				c.drainBody(res.Body)
+			}
+
+			wait := c.retrier.Backoff(c.retrier.RetryWaitMin, c.retrier.RetryWaitMax, i, res)
+			desc := fmt.Sprintf("%s %s", req.Method, req.URL)
+			if code > 0 {
+				desc = fmt.Sprintf("%s (status: %d)", desc, code)
+			}
+
+			log.Printf("[DEBUG] %s: retrying in %s (%d left)", desc, wait, remain)
+
+			select {
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			case <-time.After(wait):
+			}
 		}
 
 		return res, err
@@ -95,8 +140,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	return res.(*http.Response), err
-	//return c.retrier.Do(c, request)
+	return res, err
 }
 
 // newRequest creates a new wrapped request.

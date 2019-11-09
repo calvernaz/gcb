@@ -6,23 +6,23 @@ import (
 	"time"
 )
 
-func TestStateChanges(t *testing.T) {
-	states := []State{
-		Open,
-		HalfOpen,
-		Close,
-	}
-
-	circuit := Gcb{
-		state: 0,
-	}
-	for i, s := range states {
-		circuit.state = s
-		if circuit.state != states[i] {
-			t.Errorf("expected %s, got %s", states[i], circuit.state)
-		}
-	}
-}
+//func TestStateChanges(t *testing.T) {
+//	states := []State{
+//		Open,
+//		HalfOpen,
+//		Close,
+//	}
+//
+//	circuit := Gcb{
+//		state: 0,
+//	}
+//	for i, s := range states {
+//		circuit.state = s
+//		if circuit.state != states[i] {
+//			t.Errorf("expected %s, got %s", states[i], circuit.state)
+//		}
+//	}
+//}
 
 func TestCircuitRetry(t *testing.T) {
 
