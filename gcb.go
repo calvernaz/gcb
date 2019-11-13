@@ -4,14 +4,14 @@ import (
 	"net/http"
 )
 
-// Gcb
-type Gcb struct {
+// tripper
+type tripper struct {
 	http.RoundTripper
 }
 
-func New() *Gcb {
+func NewRoundTripper() *tripper {
 	circuit := newCircuit()
-	gcb := &Gcb{
+	gcb := &tripper{
 		RoundTripper: circuit,
 	}
 	return gcb

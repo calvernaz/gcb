@@ -37,6 +37,7 @@ type Option func(*Config)
 type Config struct {
 	delay         time.Duration
 	lastErrorOnly bool
+	retries       int
 }
 
 // Retrier
@@ -63,6 +64,7 @@ func NewRetrier(opts ...Option) *Retrier {
 	config := &Config{
 		delay:         100 * time.Millisecond,
 		lastErrorOnly: false,
+		retries: defaultRetryMax,
 	}
 
 	//apply opts
@@ -72,6 +74,7 @@ func NewRetrier(opts ...Option) *Retrier {
 
 	return &Retrier{
 		config:     config,
+		RetryMax: config.retries,
 		CheckRetry: DefaultRetryPolicy,
 		Backoff:    DefaultBackoff,
 		Limiter:    rate.NewLimiter(rate.Every(5 * time.Millisecond), 200),

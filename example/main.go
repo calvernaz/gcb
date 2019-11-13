@@ -11,7 +11,7 @@ import (
 
 func main() {
 
-	transport := gcb.New()
+	transport := gcb.NewRoundTripper()
 	client := http.Client{
 		Transport: transport,
 		Timeout:   30 * time.Second,
