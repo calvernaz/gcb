@@ -9,55 +9,56 @@ import (
 	"golang.org/x/time/rate"
 )
 
-var errMaxRetriesReached = errors.New("exceeded retry limit")
-
 var (
+	errMaxRetriesReached = errors.New("exceeded retry limit")
+
 	// Default retry configuration
 	defaultRetryWaitMin = 1 * time.Second
 	defaultRetryWaitMax = 30 * time.Second
 	defaultRetryMax     = 4
 )
 
-// CheckRetry specifies a policy for handling retries. It is called
-// following each request with the response and error values returned by
-// the http.Client. If CheckRetry returns false, the Client stops retrying
-// and returns the response to the caller. If CheckRetry returns an error,
-// that error value is returned in lieu of the error from the request. The
-// Client will close any response body when retrying, but if the retry is
-// aborted it is up to the CheckRetry callback to properly close any
-// response body before returning.
-type CheckRetry func(ctx context.Context, resp *http.Response, err error) (bool, error)
+type (
+	// CheckRetry specifies a policy for handling shouldRetry. It is called
+	// following each request with the response and error values returned by
+	// the http.Client. If CheckRetry returns false, the Client stops retrying
+	// and returns the response to the caller. If CheckRetry returns an error,
+	// that error value is returned in lieu of the error from the request. The
+	// Client will close any response body when retrying, but if the retry is
+	// aborted it is up to the CheckRetry callback to properly close any
+	// response body before returning.
+	CheckRetry func(ctx context.Context, resp *http.Response, err error) (bool, error)
 
-// Function signature of retryable function
-type DoFunc func() (*http.Response, error)
+	// Function signature of retryable function
+	DoFunc func() (*http.Response, error)
 
-// Option represents an option for retry.
-type Option func(*Config)
+	// Option represents an option for retry.
+	Option func(*Config)
+	Config struct {
+		delay         time.Duration
+		lastErrorOnly bool
+		retries       int
+	}
 
-type Config struct {
-	delay         time.Duration
-	lastErrorOnly bool
-	retries       int
-}
+	// Retrier
+	Retrier struct {
+		config *Config
 
-// Retrier
-type Retrier struct {
-	config *Config
+		// Backoff specifies the policy for how long to wait between shouldRetry
+		Backoff Backoff
 
-	// Backoff specifies the policy for how long to wait between retries
-	Backoff Backoff
+		RetryWaitMin time.Duration // Minimum time to wait
+		RetryWaitMax time.Duration // Maximum time to wait
+		RetryMax     int           // Maximum number of shouldRetry
 
-	RetryWaitMin time.Duration // Minimum time to wait
-	RetryWaitMax time.Duration // Maximum time to wait
-	RetryMax     int           // Maximum number of retries
+		// CheckRetry specifies the policy for handling shouldRetry, and is called
+		// after each request. The default policy is DefaultRetryPolicy.
+		CheckRetry CheckRetry
 
-	// CheckRetry specifies the policy for handling retries, and is called
-	// after each request. The default policy is DefaultRetryPolicy.
-	CheckRetry CheckRetry
-
-	// Limiter specifies the policy that controls the request rate.
-	Limiter *rate.Limiter
-}
+		// Limiter specifies the policy that controls the request rate.
+		Limiter *rate.Limiter
+	}
+)
 
 func NewRetrier(opts ...Option) *Retrier {
 	//default
@@ -78,6 +79,12 @@ func NewRetrier(opts ...Option) *Retrier {
 		CheckRetry: DefaultRetryPolicy,
 		Backoff:    DefaultBackoff,
 		Limiter:    rate.NewLimiter(rate.Every(5 * time.Millisecond), 200),
+	}
+}
+
+func WithMaxRetries(maxRetries int) Option {
+	return func(config *Config) {
+		config.retries = maxRetries
 	}
 }
 

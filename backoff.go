@@ -1,4 +1,4 @@
-//  A backoff strategy specifies how long to wait between retries.
+//  A backoff strategy specifies how long to wait between shouldRetry.
 //  Similar to the retry policy, export a function type and provide a default implementation
 //  of the same.
 package gcb
@@ -14,7 +14,7 @@ import (
 type BackoffStrategy func(retry int) time.Duration
 
 
-// Backoff specifies a policy for how long to wait between retries.
+// Backoff specifies a policy for how long to wait between shouldRetry.
 // It is called after a failing request to determine the amount of time
 // that should pass before trying again.
 type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
@@ -23,7 +23,7 @@ type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) t
 // BackOff is a backoff policy for retrying an operation.
 type BackOff interface {
 	// NextBackOff returns the duration to wait before retrying the operation,
-	// or backoff. Stop to indicate that no more retries should be made.
+	// or backoff. Stop to indicate that no more shouldRetry should be made.
 	//
 	// Example usage:
 	//

@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-
-
 var (
 	_ http.RoundTripper = (*circuit)(nil)
 	// We need to consume response bodies to maintain http connections, but
@@ -22,38 +20,46 @@ var (
 	rateLimitExceeded = errors.New("exceeded rate limit")
 )
 
-// ErrorHandler is called if retries are expired, containing the last status
-// from the http library. If not specified, default behavior for the library is
-// to close the body and return an error indicating how many tries were
-// attempted. If overriding this, be sure to close the body if needed.
-type ErrorHandler func(resp *http.Response, err error, numTries int) (*http.Response, error)
+type (
+	// ErrorHandler is called if shouldRetry are expired, containing the last status
+	// from the http library. If not specified, default behavior for the library is
+	// to close the body and return an error indicating how many tries were
+	// attempted. If overriding this, be sure to close the body if needed.
+	ErrorHandler func(resp *http.Response, err error, numTries int) (*http.Response, error)
 
-// ReaderFunc is the type of function that can be given natively to newRequest
-type ReaderFunc func() (io.Reader, error)
+	// ReaderFunc is the type of function that can be given natively to newRequest
+	ReaderFunc func() (io.Reader, error)
 
-// Request wraps the metadata needed to create HTTP requests.
-type Request struct {
-	// body is a seekable reader over the request body payload. This is
-	// used to rewind the request data in between retries.
-	Body ReaderFunc
+	// LenReader is an interface implemented by many in-memory io.Reader's. Used
+	// for automatically sending the right Content-Length header when possible.
+	LenReader interface {
+		Len() int
+	}
 
-	// Embed an HTTP request directly. This makes a *Request act exactly
-	// like an *http.Request so that all meta methods are supported.
-	*http.Request
-}
+	// Request wraps the metadata needed to create HTTP requests.
+	Request struct {
+		// body is a seekable reader over the request body payload. This is
+		// used to rewind the request data in between shouldRetry.
+		Body ReaderFunc
 
-type circuit struct {
-	retrier *Retrier
-	breaker *Breaker
+		// Embed an HTTP request directly. This makes a *Request act exactly
+		// like an *http.Request so that all meta methods are supported.
+		*http.Request
+	}
 
-	RoundTripper http.RoundTripper
+	circuit struct {
+		retrier *Retrier
+		breaker *Breaker
 
-	// ErrorHandler specifies the custom error handler to use, if any
-	ErrorHandler ErrorHandler
-}
+		RoundTripper http.RoundTripper
 
-func newCircuit() *circuit {
-	retrier := NewRetrier()
+		// ErrorHandler specifies the custom error handler to use, if any
+		ErrorHandler ErrorHandler
+	}
+)
+
+func newCircuit(opts ...Option) *circuit {
+	retrier := NewRetrier(opts...)
 	breaker := NewBreaker()
 	return &circuit{
 		retrier:      retrier,
@@ -62,14 +68,8 @@ func newCircuit() *circuit {
 	}
 }
 
-// LenReader is an interface implemented by many in-memory io.Reader's. Used
-// for automatically sending the right Content-Length header when possible.
-type LenReader interface {
-	Len() int
-}
-
 // RoundTrip intercepts the request and takes action from here:
-// - retries
+// - shouldRetry
 // - rate limiting
 // - circuit breaking
 func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -92,7 +92,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, err
 			}
 
-			// Check if we should continue with retries.
+			// Check if we should continue with shouldRetry.
 			canRetry, checkErr := c.retrier.retryPolicy(req.Context(), res, err)
 			if err != nil {
 				log.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, err)

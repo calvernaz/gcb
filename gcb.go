@@ -9,10 +9,11 @@ type tripper struct {
 	http.RoundTripper
 }
 
-func NewRoundTripper() *tripper {
-	circuit := newCircuit()
-	gcb := &tripper{
+func NewRoundTripper(opts ...Option) *tripper {
+	circuit := newCircuit(opts...)
+	t := &tripper{
 		RoundTripper: circuit,
 	}
-	return gcb
+	return t
 }
+
