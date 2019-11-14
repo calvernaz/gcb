@@ -32,14 +32,6 @@ type (
 	// Function signature of retryable function
 	DoFunc func() (*http.Response, error)
 
-	// Option represents an option for retry.
-	Option func(*Config)
-	Config struct {
-		delay         time.Duration
-		lastErrorOnly bool
-		retries       int
-	}
-
 	// Retrier
 	Retrier struct {
 		config *Config
@@ -49,7 +41,7 @@ type (
 
 		RetryWaitMin time.Duration // Minimum time to wait
 		RetryWaitMax time.Duration // Maximum time to wait
-		RetryMax     int           // Maximum number of shouldRetry
+		RetryMax     int           // Maximum number of retries
 
 		// CheckRetry specifies the policy for handling shouldRetry, and is called
 		// after each request. The default policy is DefaultRetryPolicy.
@@ -68,7 +60,7 @@ func NewRetrier(opts ...Option) *Retrier {
 		retries: defaultRetryMax,
 	}
 
-	//apply opts
+	// apply opts
 	for _, opt := range opts {
 		opt(config)
 	}
@@ -79,12 +71,6 @@ func NewRetrier(opts ...Option) *Retrier {
 		CheckRetry: DefaultRetryPolicy,
 		Backoff:    DefaultBackoff,
 		Limiter:    rate.NewLimiter(rate.Every(5 * time.Millisecond), 200),
-	}
-}
-
-func WithMaxRetries(maxRetries int) Option {
-	return func(config *Config) {
-		config.retries = maxRetries
 	}
 }
 
