@@ -43,7 +43,7 @@ type (
 		RetryWaitMax time.Duration // Maximum time to wait
 		RetryMax     int           // Maximum number of retries
 
-		// CheckRetry specifies the policy for handling shouldRetry, and is called
+		// CheckRetry specifies the policy for handling reties, and is called
 		// after each request. The default policy is DefaultRetryPolicy.
 		CheckRetry CheckRetry
 

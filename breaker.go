@@ -2,6 +2,7 @@ package gcb
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -14,15 +15,94 @@ var (
 	ErrOpenState = errors.New("circuit breaker is open")
 )
 
-const defaultTimeout = time.Duration(60) * time.Second
+type (
+	State int8
 
-type State int8
+	// Counts holds the numbers of requests and their successes/failures.
+	// Breaker clears the internal Counts either
+	// on the change of the state or at the closed-state intervals.
+	// Counts ignores the results of the requests sent before clearing.
+	Counts struct {
+		Requests             uint32
+		TotalSuccesses       uint32
+		TotalFailures        uint32
+		ConsecutiveSuccesses uint32
+		ConsecutiveFailures  uint32
+	}
+
+	// Settings configures CircuitBreaker:
+	//
+	// Name is the name of the CircuitBreaker.
+	//
+	// MaxRequests is the maximum number of requests allowed to pass through
+	// when the CircuitBreaker is half-open.
+	// If MaxRequests is 0, the CircuitBreaker allows only 1 request.
+	//
+	// Interval is the cyclic period of the closed state
+	// for the CircuitBreaker to clear the internal Counts.
+	// If Interval is 0, the CircuitBreaker doesn't clear internal Counts during the closed state.
+	//
+	// Timeout is the period of the open state,
+	// after which the state of the CircuitBreaker becomes half-open.
+	// If Timeout is 0, the timeout value of the CircuitBreaker is set to 60 seconds.
+	//
+	// ReadyToTrip is called with a copy of Counts whenever a request fails in the closed state.
+	// If ReadyToTrip returns true, the CircuitBreaker will be placed into the open state.
+	// If ReadyToTrip is nil, default ReadyToTrip is used.
+	// Default ReadyToTrip returns true when the number of consecutive failures is more than 5.
+	//
+	// OnStateChange is called whenever the state of the CircuitBreaker changes.
+	Settings struct {
+		Name          string
+		MaxRequests   uint32
+		Interval      time.Duration
+		Timeout       time.Duration
+		ReadyToTrip   func(counts Counts) bool
+		OnStateChange func(name string, from State, to State)
+	}
+
+	// Breaker is a state machine to prevent sending requests that are likely to fail.
+	Breaker struct {
+		name          string
+		maxRequests   uint32
+		interval      time.Duration
+		timeout       time.Duration
+		readyToTrip   func(counts Counts) bool
+		onStateChange func(name string, from State, to State)
+
+		mutex      sync.Mutex
+		state      State
+		generation uint64
+		counts     Counts
+		expiry     time.Time
+	}
+)
 
 const (
+	defaultTimeout = time.Duration(60) * time.Second
+
 	Open State = iota + 1
 	HalfOpen
 	Close
 )
+
+func NewBreaker() *Breaker {
+	return NewCircuitBreaker(Settings{
+		Name:    "HTTP Client",
+		Timeout: time.Second * 45,
+		ReadyToTrip: func(counts Counts) bool {
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= 3 && failureRatio >= 0.6
+		},
+		OnStateChange: func(name string, from State, to State) {
+			fmt.Printf("%s changed from %s to %s", name, from, to)
+		},
+	})
+}
+
+func defaultReadyToTrip(counts Counts) bool {
+	return counts.ConsecutiveFailures > 5
+}
 
 func (s State) String() string {
 	switch s {
@@ -34,18 +114,6 @@ func (s State) String() string {
 		return "Close"
 	}
 	return ""
-}
-
-// Counts holds the numbers of requests and their successes/failures.
-// Breaker clears the internal Counts either
-// on the change of the state or at the closed-state intervals.
-// Counts ignores the results of the requests sent before clearing.
-type Counts struct {
-	Requests             uint32
-	TotalSuccesses       uint32
-	TotalFailures        uint32
-	ConsecutiveSuccesses uint32
-	ConsecutiveFailures  uint32
 }
 
 func (c *Counts) onRequest() {
@@ -70,52 +138,6 @@ func (c *Counts) clear() {
 	c.TotalFailures = 0
 	c.ConsecutiveSuccesses = 0
 	c.ConsecutiveFailures = 0
-}
-// Settings configures CircuitBreaker:
-//
-// Name is the name of the CircuitBreaker.
-//
-// MaxRequests is the maximum number of requests allowed to pass through
-// when the CircuitBreaker is half-open.
-// If MaxRequests is 0, the CircuitBreaker allows only 1 request.
-//
-// Interval is the cyclic period of the closed state
-// for the CircuitBreaker to clear the internal Counts.
-// If Interval is 0, the CircuitBreaker doesn't clear internal Counts during the closed state.
-//
-// Timeout is the period of the open state,
-// after which the state of the CircuitBreaker becomes half-open.
-// If Timeout is 0, the timeout value of the CircuitBreaker is set to 60 seconds.
-//
-// ReadyToTrip is called with a copy of Counts whenever a request fails in the closed state.
-// If ReadyToTrip returns true, the CircuitBreaker will be placed into the open state.
-// If ReadyToTrip is nil, default ReadyToTrip is used.
-// Default ReadyToTrip returns true when the number of consecutive failures is more than 5.
-//
-// OnStateChange is called whenever the state of the CircuitBreaker changes.
-type Settings struct {
-	Name          string
-	MaxRequests   uint32
-	Interval      time.Duration
-	Timeout       time.Duration
-	ReadyToTrip   func(counts Counts) bool
-	OnStateChange func(name string, from State, to State)
-}
-
-// Breaker is a state machine to prevent sending requests that are likely to fail.
-type Breaker struct {
-	name          string
-	maxRequests   uint32
-	interval      time.Duration
-	timeout       time.Duration
-	readyToTrip   func(counts Counts) bool
-	onStateChange func(name string, from State, to State)
-
-	mutex      sync.Mutex
-	state      State
-	generation uint64
-	counts     Counts
-	expiry     time.Time
 }
 
 // NewCircuitBreaker returns a new CircuitBreaker configured with the given Settings.
@@ -207,10 +229,6 @@ func (cb *Breaker) afterRequest(before uint64, success bool) {
 	}
 }
 
-func defaultReadyToTrip(counts Counts) bool {
-	return counts.ConsecutiveFailures > 5
-}
-
 func (cb *Breaker) toNewGeneration(now time.Time) {
 	cb.generation++
 	cb.counts.clear()
@@ -281,18 +299,4 @@ func (cb *Breaker) onFailure(state State, now time.Time) {
 	case HalfOpen:
 		cb.setState(Open, now)
 	}
-}
-
-func NewBreaker() *Breaker {
-	return NewCircuitBreaker(Settings{
-		Name:    "HTTP Client",
-		Timeout: time.Second * 45,
-		ReadyToTrip: func(counts Counts) bool {
-			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 3 && failureRatio >= 0.6
-		},
-		OnStateChange: func(name string, from State, to State) {
-			// do smth when circuit breaker trips.
-		},
-	})
 }

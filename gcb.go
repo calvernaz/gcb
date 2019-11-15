@@ -21,9 +21,9 @@ type (
 )
 
 func NewRoundTripper(opts ...Option) *tripper {
-	circuit := newCircuit(opts...)
+	cb := newCircuitBreaker(opts...)
 	t := &tripper{
-		RoundTripper: circuit,
+		RoundTripper: cb,
 	}
 	return t
 }
