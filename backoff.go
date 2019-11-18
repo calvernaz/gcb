@@ -77,14 +77,14 @@ func LinearJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Resp
 		return min * time.Duration(attemptNum)
 	}
 
-	// Seed rand; doing this every time is fine
-	rand := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	// Seed rnd; doing this every time is fine
+	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 
 	// Pick a random number that lies somewhere between the min and max and
 	// multiply by the attemptNum. attemptNum starts at zero so we always
 	// increment here. We first get a random percentage, then apply that to the
 	// difference between min and max, and add to min.
-	jitter := rand.Float64() * float64(max-min)
+	jitter := rnd.Float64() * float64(max-min)
 	jitterMin := int64(jitter) + int64(min)
 	return time.Duration(jitterMin * int64(attemptNum))
 }

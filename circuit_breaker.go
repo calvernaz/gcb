@@ -83,7 +83,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// the circuit breaker
 	res, err := c.breaker.Execute(func() (*http.Response, error) {
-		var code int // HTTP response code
+		var code int            // HTTP response code
 		var resp *http.Response // HTTP response
 		var err error
 
@@ -109,7 +109,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 			// we're breaking out
 			remain := c.retrier.RetryMax - i
 			if remain <= 0 {
-				err = fmt.Errorf("%s %s giving up after %d attempts",
+				err = fmt.Errorf("%s: %s %s giving up after %d attempts", errMaxRetriesReached,
 					req.Method, req.URL, c.retrier.RetryMax+1)
 				break
 			}
@@ -137,7 +137,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 	//}
 
 	if err == nil {
-		res.Body.Close()
+		_ = res.Body.Close()
 	}
 
 	return res, nil
@@ -184,7 +184,7 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 				contentLength = int64(lr.Len())
 			}
 			if c, ok := tmp.(io.Closer); ok {
-				c.Close()
+				_ = c.Close()
 			}
 
 		case func() (io.Reader, error):
@@ -197,7 +197,7 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 				contentLength = int64(lr.Len())
 			}
 			if c, ok := tmp.(io.Closer); ok {
-				c.Close()
+				_ = c.Close()
 			}
 
 		// If a regular byte slice, we can read it over and over via new

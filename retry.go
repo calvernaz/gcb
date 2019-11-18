@@ -31,13 +31,12 @@ type (
 
 	// Retrier
 	Retrier struct {
-
 		// Backoff specifies the policy for how long to wait between shouldRetry
 		Backoff Backoff
 
 		RetryWaitMin time.Duration // Minimum time to wait
 		RetryWaitMax time.Duration // Maximum time to wait
-		RetryMax     uint32           // Maximum number of maxRetries
+		RetryMax     uint32        // Maximum number of maxRetries
 
 		// CheckRetry specifies the policy for handling reties, and is called
 		// after each request. The default policy is DefaultRetryPolicy.
@@ -51,10 +50,9 @@ type (
 func NewRetrier(opts ...Option) *Retrier {
 	// defaults
 	config := &Config{
-		lastErrorOnly: false,
-		maxRetries:    defaultRetryMax,
-		minWait: defaultRetryWaitMin,
-		maxWait: defaultRetryWaitMax,
+		maxRetries: defaultRetryMax,
+		minWait:    defaultRetryWaitMin,
+		maxWait:    defaultRetryWaitMax,
 	}
 
 	// apply opts
@@ -63,10 +61,13 @@ func NewRetrier(opts ...Option) *Retrier {
 	}
 
 	return &Retrier{
-		RetryMax: config.maxRetries,
+		RetryMax:     config.maxRetries,
+		RetryWaitMin: config.minWait,
+		RetryWaitMax: config.maxWait,
+
 		CheckRetry: DefaultRetryPolicy,
 		Backoff:    DefaultBackoff,
-		Limiter:    rate.NewLimiter(rate.Every(5 * time.Millisecond), 200),
+		Limiter:    rate.NewLimiter(rate.Every(5*time.Millisecond), 200),
 	}
 }
 

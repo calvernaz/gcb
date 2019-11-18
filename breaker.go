@@ -149,35 +149,6 @@ func (c *Counts) clear() {
 	c.ConsecutiveFailures = 0
 }
 
-//func NewCircuitBreaker(st Settings) *Breaker {
-//	cb := new(Breaker)
-//
-//	cb.name = st.Name
-//	cb.interval = st.Interval
-//	cb.onStateChange = st.OnStateChange
-//
-//	if st.MaxRequests == 0 {
-//		cb.maxRequests = 1
-//	} else {
-//		cb.maxRequests = st.MaxRequests
-//	}
-//
-//	if st.Timeout == 0 {
-//		cb.timeout = defaultTimeout
-//	} else {
-//		cb.timeout = st.Timeout
-//	}
-//
-//	if st.ReadyToTrip == nil {
-//		cb.readyToTrip = defaultReadyToTrip
-//	} else {
-//		cb.readyToTrip = st.ReadyToTrip
-//	}
-//
-//	cb.toNewGeneration(time.Now())
-//
-//	return cb
-//}
 
 // Execute runs the given request if the CircuitBreaker accepts it.
 // Execute returns an error instantly if the CircuitBreaker rejects the request.

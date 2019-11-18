@@ -15,7 +15,6 @@ type (
 	Option func(*Config)
 
 	Config struct {
-		lastErrorOnly bool
 		maxRetries    uint32
 		maxRequests   uint32
 
