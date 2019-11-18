@@ -15,7 +15,7 @@ var (
 	// Default retry configuration
 	defaultRetryWaitMin = 1 * time.Second
 	defaultRetryWaitMax = 30 * time.Second
-	defaultRetryMax     = 4
+	defaultRetryMax     = uint32(4)
 )
 
 type (
@@ -29,19 +29,15 @@ type (
 	// response body before returning.
 	CheckRetry func(ctx context.Context, resp *http.Response, err error) (bool, error)
 
-	// Function signature of retryable function
-	DoFunc func() (*http.Response, error)
-
 	// Retrier
 	Retrier struct {
-		config *Config
 
 		// Backoff specifies the policy for how long to wait between shouldRetry
 		Backoff Backoff
 
 		RetryWaitMin time.Duration // Minimum time to wait
 		RetryWaitMax time.Duration // Maximum time to wait
-		RetryMax     int           // Maximum number of retries
+		RetryMax     uint32           // Maximum number of maxRetries
 
 		// CheckRetry specifies the policy for handling reties, and is called
 		// after each request. The default policy is DefaultRetryPolicy.
@@ -53,11 +49,12 @@ type (
 )
 
 func NewRetrier(opts ...Option) *Retrier {
-	//default
+	// defaults
 	config := &Config{
-		delay:         100 * time.Millisecond,
 		lastErrorOnly: false,
-		retries: defaultRetryMax,
+		maxRetries:    defaultRetryMax,
+		minWait: defaultRetryWaitMin,
+		maxWait: defaultRetryWaitMax,
 	}
 
 	// apply opts
@@ -66,8 +63,7 @@ func NewRetrier(opts ...Option) *Retrier {
 	}
 
 	return &Retrier{
-		config:     config,
-		RetryMax: config.retries,
+		RetryMax: config.maxRetries,
 		CheckRetry: DefaultRetryPolicy,
 		Backoff:    DefaultBackoff,
 		Limiter:    rate.NewLimiter(rate.Every(5 * time.Millisecond), 200),

@@ -16,7 +16,7 @@ type (
 	// Backoff specifies a policy for how long to wait between shouldRetry.
 	// It is called after a failing request to determine the amount of time
 	// that should pass before trying again.
-	Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
+	Backoff func(min, max time.Duration, attemptNum uint32, resp *http.Response) time.Duration
 
 	// BackOff is a backoff policy for retrying an operation.
 	BackOff interface {
@@ -42,7 +42,7 @@ type (
 // DefaultBackoff provides a default callback for Client.Backoff which
 // will perform exponential backoff based on the attempt number and limited
 // by the provided minimum and maximum durations.
-func DefaultBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+func DefaultBackoff(min, max time.Duration, attemptNum uint32, resp *http.Response) time.Duration {
 	mult := math.Pow(2, float64(attemptNum)) * float64(min)
 	sleep := time.Duration(mult)
 	if float64(sleep) != mult || sleep > max {

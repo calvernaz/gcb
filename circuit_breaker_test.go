@@ -107,43 +107,6 @@ func TestCircuit_WithConfiguredRetryAttempts(t *testing.T) {
 	}
 }
 
-func TestRoundTripper_Below500Errors(t *testing.T) {
-	// table tests
-	tt := []struct {
-		statusCode int
-		state string
-	}{
-		{500, "Close"} ,
-	}
-
-	client, baseURL, mux, teardown := newRoundTripper()
-	defer teardown()
-
-	var statusCode int
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.WriteHeader(statusCode)
-	}))
-
-	for _, ts := range tt {
-		statusCode = ts.statusCode
-
-		request, _ := http.NewRequest("GET", baseURL, nil)
-		resp, err := client.Do(request)
-		if err != nil {
-			t.Error(err)
-		}
-
-		if resp.StatusCode != ts.statusCode {
-			t.Errorf("Expected %d, got %d", ts.statusCode, resp.StatusCode)
-		}
-
-		if _, err = io.Copy(ioutil.Discard, resp.Body); err != nil {
-			t.Error(err)
-		}
-	}
-
-}
-
 func newRoundTripper(opts ...Option) (http.Client, string, *http.ServeMux, func()) {
 	// setup http client with our round tripper
 	// the default number of shouldRetry is 4.

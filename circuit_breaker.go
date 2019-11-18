@@ -22,6 +22,7 @@ var (
 )
 
 type (
+	// TODO: can be removed?
 	// ErrorHandler is called if shouldRetry are expired, containing the last status
 	// from the http library. If not specified, default behavior for the library is
 	// to close the body and return an error indicating how many tries were
@@ -61,7 +62,7 @@ type (
 
 func newCircuitBreaker(opts ...Option) *circuit {
 	retrier := NewRetrier(opts...)
-	breaker := NewBreaker()
+	breaker := NewBreaker(opts...)
 	return &circuit{
 		retrier:      retrier,
 		breaker:      breaker,
@@ -87,11 +88,9 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		var err error
 
 		// run X times
-		for i := 0; ; i++ {
+		var i uint32
+		for i = 0; ; i++ {
 			resp, err = c.RoundTripper.RoundTrip(request.Request)
-			if err != nil {
-				log.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, err)
-			}
 
 			// Check if we should continue with shouldRetry.
 			shouldRetry, checkErr := c.retrier.retryPolicy(req.Context(), resp, err)
@@ -133,14 +132,18 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, err
 	})
 
-	if err != nil {
+	//if c.ErrorHandler != nil {
+	//	return c.ErrorHandler(res, err, c.retrier.RetryMax+1)
+	//}
+
+	if err == nil {
 		res.Body.Close()
 	}
 
 	return res, nil
 }
 
-func (c *circuit) logRetry(req *http.Request, code int, wait time.Duration, remain int) {
+func (c *circuit) logRetry(req *http.Request, code int, wait time.Duration, remain uint32) {
 	desc := fmt.Sprintf("%s %s", req.Method, req.URL)
 	if code > 0 {
 		desc = fmt.Sprintf("%s (status: %d)", desc, code)
@@ -264,4 +267,8 @@ func (c *circuit) drainBody(body io.ReadCloser) {
 	if err != nil {
 		log.Printf("[ERR] error reading response body: %v", err)
 	}
+}
+
+func (c *circuit) GetState() State {
+	return c.breaker.state
 }

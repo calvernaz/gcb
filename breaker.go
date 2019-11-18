@@ -2,7 +2,6 @@ package gcb
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -30,44 +29,32 @@ type (
 		ConsecutiveFailures  uint32
 	}
 
-	// Settings configures CircuitBreaker:
-	//
-	// Name is the name of the CircuitBreaker.
-	//
-	// MaxRequests is the maximum number of requests allowed to pass through
-	// when the CircuitBreaker is half-open.
-	// If MaxRequests is 0, the CircuitBreaker allows only 1 request.
-	//
-	// Interval is the cyclic period of the closed state
-	// for the CircuitBreaker to clear the internal Counts.
-	// If Interval is 0, the CircuitBreaker doesn't clear internal Counts during the closed state.
-	//
-	// Timeout is the period of the open state,
-	// after which the state of the CircuitBreaker becomes half-open.
-	// If Timeout is 0, the timeout value of the CircuitBreaker is set to 60 seconds.
-	//
-	// ReadyToTrip is called with a copy of Counts whenever a request fails in the closed state.
-	// If ReadyToTrip returns true, the CircuitBreaker will be placed into the open state.
-	// If ReadyToTrip is nil, default ReadyToTrip is used.
-	// Default ReadyToTrip returns true when the number of consecutive failures is more than 5.
-	//
-	// OnStateChange is called whenever the state of the CircuitBreaker changes.
-	Settings struct {
-		Name          string
-		MaxRequests   uint32
-		Interval      time.Duration
-		Timeout       time.Duration
-		ReadyToTrip   func(counts Counts) bool
-		OnStateChange func(name string, from State, to State)
-	}
+	ReadyToTrip func(counts Counts) bool
+
+	OnStateChange func(name string, from State, to State)
 
 	// Breaker is a state machine to prevent sending requests that are likely to fail.
 	Breaker struct {
+		// Name is the name of the CircuitBreaker.
 		name          string
+		// MaxRequests is the maximum number of requests allowed to pass through
+		// when the CircuitBreaker is half-open.
+		// If MaxRequests is 0, the CircuitBreaker allows only 1 request.
 		maxRequests   uint32
+		// Interval is the cyclic period of the closed state
+		// for the CircuitBreaker to clear the internal Counts.
+		// If Interval is 0, the CircuitBreaker doesn't clear internal Counts during the closed state.
 		interval      time.Duration
+		// Timeout is the period of the open state,
+		// after which the state of the CircuitBreaker becomes half-open.
+		// If Timeout is 0, the timeout value of the CircuitBreaker is set to 60 seconds.
 		timeout       time.Duration
+		// ReadyToTrip is called with a copy of Counts whenever a request fails in the closed state.
+		// If ReadyToTrip returns true, the CircuitBreaker will be placed into the open state.
+		// If ReadyToTrip is nil, default ReadyToTrip is used.
+		// Default ReadyToTrip returns true when the number of consecutive failures is more than 5.
 		readyToTrip   func(counts Counts) bool
+		// OnStateChange is called whenever the state of the CircuitBreaker changes.
 		onStateChange func(name string, from State, to State)
 
 		mutex      sync.Mutex
@@ -80,28 +67,50 @@ type (
 
 const (
 	defaultTimeout = time.Duration(60) * time.Second
+	defaultInterval = time.Duration(30) * time.Second
+	defaultMaxRequests = 1
 
-	Open State = iota + 1
+	Close State = iota
 	HalfOpen
-	Close
+	Open
 )
 
-func NewBreaker() *Breaker {
-	return NewCircuitBreaker(Settings{
-		Name:    "HTTP Client",
-		Timeout: time.Second * 45,
-		ReadyToTrip: func(counts Counts) bool {
-			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 3 && failureRatio >= 0.6
-		},
-		OnStateChange: func(name string, from State, to State) {
-			fmt.Printf("%s changed from %s to %s", name, from, to)
-		},
-	})
+func NewBreaker(opts ...Option) *Breaker {
+	// defaults
+	config := &Config{
+		timeout: defaultTimeout,
+		interval:  defaultInterval,
+		maxRequests: defaultMaxRequests,
+		readyToTrip: defaultReadyToTrip,
+		onStateChange:  defaultOnStateChange,
+	}
+
+	// apply opts
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	cb := &Breaker{
+		timeout: config.timeout,
+		maxRequests: config.maxRequests,
+
+		readyToTrip: config.readyToTrip,
+		onStateChange: config.onStateChange,
+
+		state: Close,
+	}
+
+	cb.toNewGeneration(time.Now())
+	return cb
 }
 
+// TODO: why 3?
 func defaultReadyToTrip(counts Counts) bool {
-	return counts.ConsecutiveFailures > 5
+	return counts.ConsecutiveFailures > 3
+}
+
+func defaultOnStateChange(name string, from State, to State) {
+	// noop
 }
 
 func (s State) String() string {
@@ -140,36 +149,35 @@ func (c *Counts) clear() {
 	c.ConsecutiveFailures = 0
 }
 
-// NewCircuitBreaker returns a new CircuitBreaker configured with the given Settings.
-func NewCircuitBreaker(st Settings) *Breaker {
-	cb := new(Breaker)
-
-	cb.name = st.Name
-	cb.interval = st.Interval
-	cb.onStateChange = st.OnStateChange
-
-	if st.MaxRequests == 0 {
-		cb.maxRequests = 1
-	} else {
-		cb.maxRequests = st.MaxRequests
-	}
-
-	if st.Timeout == 0 {
-		cb.timeout = defaultTimeout
-	} else {
-		cb.timeout = st.Timeout
-	}
-
-	if st.ReadyToTrip == nil {
-		cb.readyToTrip = defaultReadyToTrip
-	} else {
-		cb.readyToTrip = st.ReadyToTrip
-	}
-
-	cb.toNewGeneration(time.Now())
-
-	return cb
-}
+//func NewCircuitBreaker(st Settings) *Breaker {
+//	cb := new(Breaker)
+//
+//	cb.name = st.Name
+//	cb.interval = st.Interval
+//	cb.onStateChange = st.OnStateChange
+//
+//	if st.MaxRequests == 0 {
+//		cb.maxRequests = 1
+//	} else {
+//		cb.maxRequests = st.MaxRequests
+//	}
+//
+//	if st.Timeout == 0 {
+//		cb.timeout = defaultTimeout
+//	} else {
+//		cb.timeout = st.Timeout
+//	}
+//
+//	if st.ReadyToTrip == nil {
+//		cb.readyToTrip = defaultReadyToTrip
+//	} else {
+//		cb.readyToTrip = st.ReadyToTrip
+//	}
+//
+//	cb.toNewGeneration(time.Now())
+//
+//	return cb
+//}
 
 // Execute runs the given request if the CircuitBreaker accepts it.
 // Execute returns an error instantly if the CircuitBreaker rejects the request.
@@ -199,8 +207,7 @@ func (cb *Breaker) beforeRequest() (uint64, error) {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
 
-	now := time.Now()
-	state, generation := cb.currentState(now)
+	state, generation := cb.currentState(time.Now())
 
 	if state == Open {
 		return generation, ErrOpenState
