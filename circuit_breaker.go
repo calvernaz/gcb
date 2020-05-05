@@ -87,6 +87,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		var resp *http.Response // HTTP response
 		var err error
 
+		request.Request.GetBody = request.GetBody
 		// run X times
 		var i uint32
 		for i = 0; ; i++ {
