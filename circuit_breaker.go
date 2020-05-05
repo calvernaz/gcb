@@ -30,7 +30,7 @@ type (
 	ErrorHandler func(resp *http.Response, err error, numTries int) (*http.Response, error)
 
 	// ReaderFunc is the type of function that can be given natively to newRequest
-	ReaderFunc func() (io.Reader, error)
+	ReaderFunc func() (io.ReadCloser, error)
 
 	// LenReader is an interface implemented by many in-memory io.Reader's. Used
 	// for automatically sending the right Content-Length header when possible.
@@ -87,7 +87,6 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		var resp *http.Response // HTTP response
 		var err error
 
-		request.Request.GetBody = request.GetBody
 		// run X times
 		var i uint32
 		for i = 0; ; i++ {
@@ -164,6 +163,7 @@ func newRequest(method, url string, rawBody interface{}) (*Request, error) {
 		return nil, err
 	}
 	httpReq.ContentLength = contentLength
+	httpReq.GetBody = bodyReader
 
 	return &Request{bodyReader, httpReq}, nil
 }
@@ -189,8 +189,11 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 			}
 
 		case func() (io.Reader, error):
-			bodyReader = body
 			tmp, err := body()
+			bodyReader = func() (io.ReadCloser, error) {
+				return ioutil.NopCloser(tmp), nil
+			}
+
 			if err != nil {
 				return nil, 0, err
 			}
@@ -205,8 +208,8 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 		// readers
 		case []byte:
 			buf := body
-			bodyReader = func() (io.Reader, error) {
-				return bytes.NewReader(buf), nil
+			bodyReader = func() (io.ReadCloser, error) {
+				return ioutil.NopCloser(bytes.NewReader(buf)), nil
 			}
 			contentLength = int64(len(buf))
 
@@ -214,8 +217,8 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 		// over
 		case *bytes.Buffer:
 			buf := body
-			bodyReader = func() (io.Reader, error) {
-				return bytes.NewReader(buf.Bytes()), nil
+			bodyReader = func() (io.ReadCloser, error) {
+				return ioutil.NopCloser(bytes.NewReader(buf.Bytes())), nil
 			}
 			contentLength = int64(buf.Len())
 
@@ -227,15 +230,15 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 			if err != nil {
 				return nil, 0, err
 			}
-			bodyReader = func() (io.Reader, error) {
-				return bytes.NewReader(buf), nil
+			bodyReader = func() (io.ReadCloser, error) {
+				return ioutil.NopCloser(bytes.NewReader(buf)), nil
 			}
 			contentLength = int64(len(buf))
 
 		// Compat case
 		case io.ReadSeeker:
 			raw := body
-			bodyReader = func() (io.Reader, error) {
+			bodyReader = func() (io.ReadCloser, error) {
 				_, err := raw.Seek(0, 0)
 				return ioutil.NopCloser(raw), err
 			}
@@ -249,8 +252,9 @@ func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, erro
 			if err != nil {
 				return nil, 0, err
 			}
-			bodyReader = func() (io.Reader, error) {
-				return bytes.NewReader(buf), nil
+			bodyReader = func() (io.ReadCloser, error) {
+				readCloser := ioutil.NopCloser(bytes.NewReader(buf))
+				return readCloser, nil
 			}
 			contentLength = int64(len(buf))
 
