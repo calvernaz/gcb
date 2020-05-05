@@ -7,3 +7,9 @@ HTTP circuit-breaker client
 
 
 *NOTE*: this is work in progress
+
+
+# Naming
+
+# rizilyens
+# conveying
