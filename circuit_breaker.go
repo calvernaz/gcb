@@ -152,13 +152,13 @@ func (c *circuit) logRetry(req *http.Request, code int, wait time.Duration, rema
 }
 
 // newRequest creates a new wrapped request.
-func newRequest(method, url string, rawBody interface{}) (*Request, error) {
+func newRequest(method, url string, rawBody io.ReadCloser) (*Request, error) {
 	bodyReader, contentLength, err := getBodyReaderAndContentLength(rawBody)
 	if err != nil {
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequest(method, url, nil)
+	httpReq, err := http.NewRequest(method, url, rawBody)
 	if err != nil {
 		return nil, err
 	}
