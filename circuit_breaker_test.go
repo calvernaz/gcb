@@ -1,12 +1,14 @@
 package gcb
 
 import (
-	"github.com/calvernaz/gcb/testutil"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/calvernaz/gcb/testutil"
 )
 
 func TestCircuit_DefaultRetryAttempts(t *testing.T) {
@@ -38,7 +40,7 @@ func TestCircuit_DefaultRetryAttempts(t *testing.T) {
 	for _, ts := range tt {
 		maxRetries = ts.shouldRetry
 
-		request, _ := http.NewRequest("GET", baseURL, nil)
+		request, _ := http.NewRequest(http.MethodPost, baseURL, strings.NewReader("Hello Server!"))
 		resp, err := client.Do(request)
 		if err != nil {
 			t.Error(err)

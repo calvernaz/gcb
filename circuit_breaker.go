@@ -76,10 +76,10 @@ func newCircuitBreaker(opts ...Option) *circuit {
 // - circuit breaking
 func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 	// wraps the original request
-	request, err := newRequest(req.Method, req.URL.String(), req.Body)
-	if err != nil {
-		return nil, err
-	}
+	//request, err := newRequest(req)
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	// the circuit breaker
 	res, err := c.breaker.Execute(func() (*http.Response, error) {
@@ -90,7 +90,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		// run X times
 		var i uint32
 		for i = 0; ; i++ {
-			resp, err = c.RoundTripper.RoundTrip(request.Request)
+			resp, err = c.RoundTripper.RoundTrip(req)
 
 			// Check if we should continue with shouldRetry.
 			shouldRetry, checkErr := c.retrier.retryPolicy(req.Context(), resp, err)
@@ -143,6 +143,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, nil
 }
 
+
 func (c *circuit) logRetry(req *http.Request, code int, wait time.Duration, remain uint32) {
 	desc := fmt.Sprintf("%s %s", req.Method, req.URL)
 	if code > 0 {
@@ -151,22 +152,23 @@ func (c *circuit) logRetry(req *http.Request, code int, wait time.Duration, rema
 	log.Printf("[DEBUG] %s: retrying in %s (%d left)", desc, wait, remain)
 }
 
+
 // newRequest creates a new wrapped request.
-func newRequest(method, url string, rawBody io.ReadCloser) (*Request, error) {
-	bodyReader, contentLength, err := getBodyReaderAndContentLength(rawBody)
-	if err != nil {
-		return nil, err
-	}
-
-	httpReq, err := http.NewRequest(method, url, rawBody)
-	if err != nil {
-		return nil, err
-	}
-	httpReq.ContentLength = contentLength
-	httpReq.GetBody = bodyReader
-
-	return &Request{bodyReader, httpReq}, nil
-}
+//func newRequest(method, url string, rawBody io.ReadCloser) (*Request, error) {
+//	bodyReader, contentLength, err := getBodyReaderAndContentLength(rawBody)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	httpReq, err := http.NewRequest(method, url, rawBody)
+//	if err != nil {
+//		return nil, err
+//	}
+//	httpReq.ContentLength = contentLength
+//	httpReq.GetBody = bodyReader
+//
+//	return &Request{bodyReader, httpReq}, nil
+//}
 
 func getBodyReaderAndContentLength(rawBody interface{}) (ReaderFunc, int64, error) {
 	var bodyReader ReaderFunc

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/calvernaz/gcb"
@@ -20,7 +21,7 @@ func main() {
 	i := 0
 	start := time.Now()
 	for {
-		request, _ := http.NewRequest("GET", "http://localhost:8080/", nil)
+		request, _ := http.NewRequest(http.MethodPost, "http://localhost:8080/", strings.NewReader("Hello Server!"))
 		response, err := client.Do(request)
 		if err != nil {
 			break
