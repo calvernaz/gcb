@@ -71,6 +71,8 @@ func newCircuitBreaker(opts ...Option) *circuit {
 }
 
 // RoundTrip intercepts the request and takes action from here:
+// The return
+
 // - retry
 // - rate limiting
 // - circuit breaking
@@ -132,15 +134,17 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, err
 	})
 
-	//if c.ErrorHandler != nil {
-	//	return c.ErrorHandler(res, err, c.retrier.RetryMax+1)
-	//}
-
-	if err == nil {
-		_ = res.Body.Close()
+	if req.Body != nil {
+		_ = req.Body.Close()
 	}
 
-	return res, err
+	// If there is a response we keep the response for the client and ignore our
+	// errors, otherwise we return an error.
+	// Returning a response and an error would be ignored by the client middleware anyway and just return the error.
+	if res != nil {
+		return res, nil
+	}
+	return nil, err
 }
 
 

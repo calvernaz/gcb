@@ -1,9 +1,11 @@
 package gcb
 
 import (
+	"bufio"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -55,16 +57,17 @@ func TestCircuit_DefaultRetryAttempts(t *testing.T) {
 			return
 		}
 		w.WriteHeader(200)
+		w.Write([]byte("Hello Client!"))
 	}))
 
 	// tests
 	for _, ts := range tt {
 		maxRetries = ts.shouldRetry
 
-		request, _ := http.NewRequest(http.MethodPost, baseURL, strings.NewReader("Hello Server!"))
+		request, _ := http.NewRequest(http.MethodPost, baseURL, strings.NewReader("Hi Server!"))
 		resp, err := client.Do(request)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		if resp.StatusCode != ts.statusCode {
@@ -74,7 +77,7 @@ func TestCircuit_DefaultRetryAttempts(t *testing.T) {
 		// reset request counter
 		reqNum = 0
 
-		if _, err = io.Copy(ioutil.Discard, resp.Body); err != nil {
+		if _, err = io.Copy(bufio.NewWriter(os.Stdout), resp.Body); err != nil {
 			t.Error(err)
 		}
 
