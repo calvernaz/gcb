@@ -140,7 +140,7 @@ func (c *circuit) RoundTrip(req *http.Request) (*http.Response, error) {
 		_ = res.Body.Close()
 	}
 
-	return res, nil
+	return res, err
 }
 
 

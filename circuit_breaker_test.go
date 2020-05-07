@@ -11,6 +11,27 @@ import (
 	"github.com/calvernaz/gcb/testutil"
 )
 
+func TestCircuit_FailedAllAttempts(t *testing.T) {
+	client, _, _, teardown := newRoundTripper(WithMaxRetries(2))
+	defer teardown()
+
+	var i int
+	for i < 2 {
+		request, _ := http.NewRequest(http.MethodPost, "http://localhost", strings.NewReader("Hello Server!"))
+		resp, err := client.Do(request)
+		if err == nil {
+			t.Fatal(err)
+		}
+
+		if resp != nil {
+			if _, err = io.Copy(ioutil.Discard, resp.Body); err != nil {
+				t.Error(err)
+			}
+		}
+		i++
+	}
+}
+
 func TestCircuit_DefaultRetryAttempts(t *testing.T) {
 	// table tests
 	tt := []struct {
