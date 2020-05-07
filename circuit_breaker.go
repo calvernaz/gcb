@@ -153,7 +153,7 @@ func (c *circuit) logRetry(req *http.Request, code int, wait time.Duration, rema
 	if code > 0 {
 		desc = fmt.Sprintf("%s (status: %d)", desc, code)
 	}
-	log.Printf("[DEBUG] %s: retrying in %s (%d left)", desc, wait, remain)
+	log.Printf("[DEBUG] %s: retrying in %s (%d left)\n", desc, wait, remain)
 }
 
 
